@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Regex → Automaton (Top-Down)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0f14;
+    --surface: #13161e;
+    --surface2: #1a1e2a;
+    --surface3: #21263a;
+    --border: #2a2f45;
+    --border2: #353c58;
+    --text: #e8eaf0;
+    --text2: #8b90a8;
+    --text3: #555c7a;
+    --accent: #7c6dfa;
+    --accent2: #9d8ffb;
+    --green: #3ddc97;
+    --green2: #2ab87e;
+    --red: #f06292;
+    --amber: #ffb347;
+    --cyan: #4dd9e0;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevents full page scroll */
+  }
+
+  /* Header */
+  header {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .logo {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .logo span { color: var(--accent2); }
+  .subtitle {
+    font-size: 12px;
+    color: var(--text3);
+    font-family: var(--mono);
+    margin-left: auto;
+  }
+
+  /* Layout - Split Pane */
+  .app {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 340px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+
+  .panel {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 14px;
+    font-family: var(--mono);
+  }
+
+  /* Input area */
+  .regex-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .regex-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .regex-input:focus { border-color: var(--accent); }
+  .regex-input.error { border-color: var(--red); }
+
+  .btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent2); }
+  .btn:active { transform: scale(0.97); }
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+  }
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--text2);
+  }
+  .btn-outline:hover { background: var(--surface2); color: var(--text); }
+  .btn-green { background: var(--green2); }
+  .btn-green:hover { background: var(--green); }
+
+  .error-msg {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--red);
+    font-family: var(--mono);
+    min-height: 16px;
+  }
+
+  /* Examples */
+  .examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .example-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .example-chip:hover { border-color: var(--accent); color: var(--accent2); }
+
+  /* Mode tabs */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .tab {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text3);
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .tab.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* Simulate */
+  .sim-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .sim-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .sim-input:focus { border-color: var(--green2); }
+  .sim-result {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--mono);
+  }
+  .sim-accept { background: rgba(61,220,151,0.12); color: var(--green); border: 1px solid rgba(61,220,151,0.2); }
+  .sim-reject { background: rgba(240,98,146,0.12); color: var(--red); border: 1px solid rgba(240,98,146,0.2); }
+  .sim-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .sim-accept .sim-dot { background: var(--green); }
+  .sim-reject .sim-dot { background: var(--red); }
+
+  /* Stats */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .stat-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .stat-label { font-size: 10px; color: var(--text3); font-family: var(--mono); margin-bottom: 4px; }
+  .stat-value { font-size: 20px; font-weight: 700; color: var(--text); }
+  .stat-value.accent { color: var(--accent2); }
+  .stat-value.green { color: var(--green); }
+
+  /* --- MAIN COLUMN (Right Side) --- */
+  .main-column {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Main canvas area (Top Half) */
+  .canvas-area {
+    display: flex;
+    flex-direction: column;
+    flex: 0.65;
+    position: relative;
+    border-bottom: 1px solid var(--border);
+    min-height: 0;
+  }
+
+  .canvas-toolbar {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .canvas-label {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--mono);
+    color: var(--text3);
+    letter-spacing: 1px;
+  }
+  .mode-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-family: var(--mono);
+    font-weight: 600;
+  }
+  .badge-nfa { background: rgba(124,109,250,0.15); color: var(--accent2); border: 1px solid rgba(124,109,250,0.25); }
+  .badge-dfa { background: rgba(77,217,224,0.12); color: var(--cyan); border: 1px solid rgba(77,217,224,0.2); }
+
+  /* Stepper Bar */
+  .stepper-bar {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .stepper-bar.visible { display: flex; }
+
+  .stepper-btn {
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    color: var(--text2);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .stepper-btn:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .stepper-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .step-indicator {
+    flex: 1;
+    text-align: center;
+  }
+  .step-counter {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent2);
+    margin-bottom: 2px;
+    font-weight: 600;
+  }
+  .step-description {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text2);
+    line-height: 1.3;
+  }
+
+  #main-canvas {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0);
+    background-size: 28px 28px;
+  }
+  #main-canvas:active { cursor: grabbing; }
+
+  .empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .empty-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    font-size: 28px;
+  }
+  .empty-title { font-size: 15px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+  .empty-sub { font-size: 12px; color: var(--text3); font-family: var(--mono); }
+
+  /* Legend Items */
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text3);
+    font-family: var(--mono);
+  }
+  .legend-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid;
+    flex-shrink: 0;
+  }
+  .ld-start { border-color: var(--amber); background: rgba(255,179,71,0.1); }
+  .ld-accept { border-color: var(--green); background: rgba(61,220,151,0.1); }
+  .ld-normal { border-color: var(--border2); background: var(--surface2); }
+
+  /* --- Transition Table Panel (Bottom Half) --- */
+  .table-panel-main {
+    display: flex;
+    flex-direction: column;
+    flex: 0.35;
+    background: var(--bg);
+    min-height: 0;
+  }
+  
+  .table-panel-main .panel-title {
+    padding: 12px 20px;
+    margin: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .table-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  .trans-table {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-collapse: collapse;
+  }
+  .trans-table th {
+    text-align: left;
+    color: var(--text3);
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+  }
+  .trans-table td {
+    padding: 6px 20px;
+    color: var(--text2);
+    border-bottom: 1px solid rgba(42,47,69,0.5);
+  }
+  .trans-table tr:last-child td { border-bottom: none; }
+  .trans-table td.start-state { color: var(--amber); }
+  .trans-table td.accept-state { color: var(--green); }
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">regex<span>→</span>automaton</div>
+  <div class="subtitle">Top-Down Decomposition · GTG · Step-by-Step</div>
+</header>
+
+<div class="app">
+  <div class="sidebar">
+
+    <div class="panel">
+      <div class="panel-title">Regular Expression</div>
+      <div class="regex-row">
+        <input class="regex-input" id="regex-input" type="text" placeholder="e.g. (a|b)*abb" autocomplete="off" spellcheck="false">
+        <button class="btn" onclick="buildAutomaton()">Build</button>
+      </div>
+      <div class="error-msg" id="error-msg"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Examples</div>
+      <div class="examples">
+        <span class="example-chip" onclick="loadExample('(a|b)*abb')">(a|b)*abb</span>
+        <span class="example-chip" onclick="loadExample('a*b*')">a*b*</span>
+        <span class="example-chip" onclick="loadExample('(a|b)*')">(a|b)*</span>
+        <span class="example-chip" onclick="loadExample('ab|cd')">ab|cd</span>
+        <span class="example-chip" onclick="loadExample('a(b|c)*d')">a(b|c)*d</span>
+        <span class="example-chip" onclick="loadExample('(0|1)*101')">(0|1)*101</span>
+        <span class="example-chip" onclick="loadExample('(0+1)*(00+11)(0+1)*')">(0+1)*(00+11)(0+1)*</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">View Mode</div>
+      <div class="tabs">
+        <button class="tab active" id="tab-nfa" onclick="setMode('nfa')">Construction Steps</button>
+        <button class="tab" id="tab-dfa" onclick="setMode('dfa')">Final DFA</button>
+      </div>
+    </div>
+
+    <div class="panel" id="sim-panel">
+      <div class="panel-title">Simulate Input (On Final DFA)</div>
+      <div class="sim-row">
+        <input class="sim-input" id="sim-input" type="text" placeholder="test string…" autocomplete="off">
+        <button class="btn btn-green btn-sm" onclick="simulate()">Run</button>
+      </div>
+      <div id="sim-result" style="display:none"></div>
+    </div>
+
+    <div class="panel" id="stats-panel" style="display:none">
+      <div class="panel-title">Statistics</div>
+      <div class="stats-grid" id="stats-grid"></div>
+    </div>
+  </div>
+
+  <div class="main-column">
+    
+    <div class="canvas-area">
+      <div class="canvas-toolbar">
+        <span class="canvas-label">AUTOMATON</span>
+        <span id="mode-badge" class="mode-badge badge-nfa">GTG</span>
+        
+        <div id="legend" style="display:none; align-items:center; gap: 16px; margin-left: 20px; border-left: 1px solid var(--border); padding-left: 20px;">
+          <div class="legend-item"><div class="legend-dot ld-start"></div>Start</div>
+          <div class="legend-item"><div class="legend-dot ld-accept"></div>Accept</div>
+          <div class="legend-item"><div class="legend-dot ld-normal"></div>Normal</div>
+        </div>
+
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="zoomFit()">Fit</button>
+          <button class="btn btn-outline btn-sm" onclick="resetView()">Reset</button>
+        </div>
+      </div>
+
+      <div class="stepper-bar" id="stepper-bar">
+        <button class="stepper-btn" id="btn-prev" onclick="stepPrev()" disabled>◀ Prev</button>
+        <div class="step-indicator">
+          <div class="step-counter" id="step-counter">Step 1 / 5</div>
+          <div class="step-description" id="step-description">Initial transition graph</div>
+        </div>
+        <button class="stepper-btn" id="btn-next" onclick="stepNext()">Next ▶</button>
+      </div>
+
+      <canvas id="main-canvas"></canvas>
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">∑</div>
+        <div class="empty-title">No automaton yet</div>
+        <div class="empty-sub">Enter a regex and click Build</div>
+      </div>
+    </div>
+
+    <div class="table-panel-main" id="table-panel" style="display:none">
+      <div class="panel-title">Transition Table</div>
+      <div class="table-wrap">
+        <table class="trans-table" id="trans-table"></table>
+      </div>
+    </div>
+    
+  </div>
+</div>
+
+<script>
+const EPSILON = 'ε';
+
+// Preprocess and Postfix
+function preprocess(re) {
+  let result = '';
+  const binary = ['|', '+']; 
+  const unary = ['*', '?'];
+  for (let i = 0; i < re.length; i++) {
+    const c = re[i];
+    result += c;
+    if (i + 1 < re.length) {
+      const n = re[i + 1];
+      if (!binary.includes(c) && c !== '(' && !binary.includes(n) && n !== ')' && !unary.includes(n)) {
+        result += '·';
+      }
+    }
+  }
+  return result;
+}
+
+function precedence(op) {
+  if (op === '|' || op === '+') return 1; 
+  if (op === '·') return 2;
+  if (op === '*' || op === '?') return 3;
+  return 0;
+}
+
+function toPostfix(re) {
+  re = re.replace(/\+/g, '|'); 
+  const output = [], ops = [];
+  const preprocessed = preprocess(re);
+  for (const c of preprocessed) {
+    if (c === '(') {
+      ops.push(c);
+    } else if (c === ')') {
+      while (ops.length && ops[ops.length-1] !== '(') output.push(ops.pop());
+      ops.pop();
+    } else if (['|','·','*','?'].includes(c)) {
+      while (ops.length && ops[ops.length-1] !== '(' && precedence(ops[ops.length-1]) >= precedence(c)) {
+        output.push(ops.pop());
+      }
+      ops.push(c);
+    } else {
+      output.push(c);
+    }
+  }
+  while (ops.length) output.push(ops.pop());
+  return output;
+}
+
+// AST Build
+function postfixToAST(postfix) {
+  const stack = [];
+  for (const token of postfix) {
+    if (token === '*') stack.push({ type: 'star', child: stack.pop() });
+    else if (token === '?') stack.push({ type: 'opt', child: stack.pop() });
+    else if (token === '·') { const r = stack.pop(), l = stack.pop(); stack.push({ type: 'concat', left: l, right: r }); }
+    else if (token === '|') { const r = stack.pop(), l = stack.pop(); stack.push({ type: 'union', left: l, right: r }); }
+    else stack.push({ type: 'literal', value: token });
+  }
+  return stack[0];
+}
+
+function astToString(ast) {
+  if (!ast) return '';
+  if (ast.type === 'epsilon') return EPSILON;
+  if (ast.type === 'literal') return ast.value;
+  if (ast.type === 'concat') return astToString(ast.left) + astToString(ast.right);
+  if (ast.type === 'union') return '(' + astToString(ast.left) + '+' + astToString(ast.right) + ')'; 
+  if (ast.type === 'star') return (ast.child.type==='literal'?ast.child.value:`(${astToString(ast.child)})`) + '*';
+  if (ast.type === 'opt') return (ast.child.type==='literal'?ast.child.value:`(${astToString(ast.child)})`) + '?';
+  return '';
+}
+
+// Top-Down Engine
+let buildSteps = [];
+let currentStepIndex = -1;
+
+function topDownBuild(postfix) {
+  let rootAst = postfixToAST(postfix);
+  let steps = [];
+  let stateId = 2; // Start = 0, Accept = 1
+  let edges = [{ from: 0, to: 1, ast: rootAst }];
+  
+  function formatGraph() {
+    let trans = new Map();
+    for(let i=0; i<stateId; i++) trans.set(i, []);
+    for(let e of edges) {
+      trans.get(e.from).push({ symbol: astToString(e.ast), to: e.to });
+    }
+    return { start: 0, accept: 1, transitions: trans, stateCount: stateId };
+  }
+
+  steps.push({ action: "Step 1: Construct initial transition graph (GTG)", nfa: formatGraph() });
+
+  let done = false;
+  let safety = 0;
+  
+  while(!done && safety < 100) {
+    done = true;
+    for (let i = 0; i < edges.length; i++) {
+      let edge = edges[i];
+      if (edge.ast.type !== 'literal' && edge.ast.type !== 'epsilon') {
+        done = false;
+        edges.splice(i, 1); 
+        let a = edge.ast;
+        
+        if (a.type === 'concat') {
+          let qNew = stateId++;
+          edges.push({from: edge.from, to: qNew, ast: a.left});
+          edges.push({from: qNew, to: edge.to, ast: a.right});
+          steps.push({action: "Step: Remove Concatenation by adding intermediate states", nfa: formatGraph()});
+        } else if (a.type === 'union') {
+          let q1 = stateId++, q2 = stateId++;
+          edges.push({from: edge.from, to: q1, ast: {type:'epsilon'}});
+          edges.push({from: q1, to: q2, ast: a.left});
+          edges.push({from: q2, to: edge.to, ast: {type:'epsilon'}});
+          
+          let q3 = stateId++, q4 = stateId++;
+          edges.push({from: edge.from, to: q3, ast: {type:'epsilon'}});
+          edges.push({from: q3, to: q4, ast: a.right});
+          edges.push({from: q4, to: edge.to, ast: {type:'epsilon'}});
+          steps.push({action: "Step: Eliminate Addition (+) operation", nfa: formatGraph()});
+        } else if (a.type === 'star') {
+          let q1 = stateId++, q2 = stateId++;
+          edges.push({from: edge.from, to: q1, ast: {type:'epsilon'}});
+          edges.push({from: q1, to: q2, ast: a.child});
+          edges.push({from: q2, to: q1, ast: {type:'epsilon'}}); 
+          edges.push({from: q1, to: edge.to, ast: {type:'epsilon'}}); 
+          edges.push({from: q2, to: edge.to, ast: {type:'epsilon'}}); 
+          steps.push({action: "Step: Eliminate Asterisk (*) by introducing ε-moves", nfa: formatGraph()});
+        } else if (a.type === 'opt') {
+          let q1 = stateId++, q2 = stateId++;
+          edges.push({from: edge.from, to: q1, ast: {type:'epsilon'}});
+          edges.push({from: q1, to: q2, ast: a.child});
+          edges.push({from: edge.from, to: edge.to, ast: {type:'epsilon'}});
+          edges.push({from: q2, to: edge.to, ast: {type:'epsilon'}});
+          steps.push({action: "Step: Breakdown Optional (?)", nfa: formatGraph()});
+        }
+        break; 
+      }
+    }
+    safety++;
+  }
+  
+  steps.push({ action: "Final Step: Completed ε-NFA Structure", nfa: formatGraph() });
+  return { finalNfa: steps[steps.length - 1].nfa, steps: steps };
+}
+
+// DFA Conversion
+function epsilonClosure(states, transitions) {
+  const closure = new Set(states);
+  const queue = [...states];
+  while (queue.length) {
+    const s = queue.shift();
+    const trans = transitions.get(s) || [];
+    for (const { symbol, to } of trans) {
+      if (symbol === EPSILON && !closure.has(to)) {
+        closure.add(to);
+        queue.push(to);
+      }
+    }
+  }
+  return closure;
+}
+
+function move(states, symbol, transitions) {
+  const result = new Set();
+  for (const s of states) {
+    const trans = transitions.get(s) || [];
+    for (const { symbol: sym, to } of trans) {
+      if (sym === symbol) result.add(to);
+    }
+  }
+  return result;
+}
+
+function nfaToDfa(nfa) {
+  const { start, accept, transitions } = nfa;
+  const alphabet = new Set();
+  for (const [, trans] of transitions) {
+    for (const { symbol } of trans) {
+      if (symbol !== EPSILON) alphabet.add(symbol);
+    }
+  }
+
+  const startClosure = epsilonClosure([start], transitions);
+  const dfaStates = new Map();
+  const dfaTransitions = new Map();
+  const dfaAccept = new Set();
+
+  let idCounter = 0;
+  const getKey = (states) => [...states].sort((a,b)=>a-b).join(',');
+  const queue = [startClosure];
+  const startKey = getKey(startClosure);
+  dfaStates.set(startKey, { id: idCounter++, nfaStates: startClosure });
+  if (startClosure.has(accept)) dfaAccept.add(startKey);
+
+  while (queue.length) {
+    const current = queue.shift();
+    const currentKey = getKey(current);
+    const currentId = dfaStates.get(currentKey).id;
+
+    for (const sym of alphabet) {
+      const moved = move(current, sym, transitions);
+      if (moved.size === 0) continue;
+      const closure = epsilonClosure([...moved], transitions);
+      const key = getKey(closure);
+
+      if (!dfaStates.has(key)) {
+        dfaStates.set(key, { id: idCounter++, nfaStates: closure });
+        if (closure.has(accept)) dfaAccept.add(key);
+        queue.push(closure);
+      }
+
+      if (!dfaTransitions.has(currentId)) dfaTransitions.set(currentId, []);
+      dfaTransitions.get(currentId).push({ symbol: sym, to: dfaStates.get(key).id });
+    }
+  }
+
+  const dfaStateList = [...dfaStates.entries()].map(([key, {id, nfaStates}]) => ({
+    id, key, nfaStates,
+    isAccept: dfaAccept.has(key),
+    isStart: key === startKey
+  }));
+
+  return {
+    states: dfaStateList,
+    transitions: dfaTransitions,
+    start: 0,
+    alphabet: [...alphabet],
+    stateCount: idCounter
+  };
+}
+
+function validateRegex(re) {
+  if (!re.trim()) throw new Error('Empty expression');
+  let depth = 0;
+  for (const c of re) {
+    if (c === '(') depth++;
+    else if (c === ')') { depth--; if (depth < 0) throw new Error('Unmatched )'); }
+  }
+  if (depth !== 0) throw new Error('Unmatched (');
+}
+
+// ============================================================
+// CANVAS STATE & DISPLAY
+// ============================================================
+
+let currentNfa = null, currentDfa = null, currentMode = 'nfa';
+let simulatedPath = null;
+
+let canvasScale = 1, panX = 0, panY = 0, isPanning = false, lastPan = null;
+let nodePositions = []; 
+let edges = [];         
+
+const canvas = document.getElementById('main-canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
+  render();
+}
+window.addEventListener('resize', resizeCanvas);
+
+// Drag & Pan controls
+canvas.addEventListener('mousedown', e => { isPanning = true; lastPan = {x: e.clientX, y: e.clientY}; });
+canvas.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  panX += e.clientX - lastPan.x;
+  panY += e.clientY - lastPan.y;
+  lastPan = {x: e.clientX, y: e.clientY};
+  render();
+});
+canvas.addEventListener('mouseup', () => isPanning = false);
+canvas.addEventListener('mouseleave', () => isPanning = false);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  panX = mx - factor*(mx - panX);
+  panY = my - factor*(my - panY);
+  canvasScale *= factor;
+  render();
+}, { passive: false });
+
+function layoutNfa(nfa) {
+  const { start, accept, transitions, stateCount } = nfa;
+  const nodes = [], visited = new Set();
+  const layers = new Map(); 
+  const queue = [{state: start, layer: 0}];
+  layers.set(start, 0);
+  const maxLayer = new Map();
+
+  while (queue.length) {
+    const { state, layer } = queue.shift();
+    if (visited.has(state)) continue;
+    visited.add(state);
+    maxLayer.set(layer, (maxLayer.get(layer) || 0) + 1);
+    const trans = transitions.get(state) || [];
+    for (const { to } of trans) {
+      if (!layers.has(to)) {
+        layers.set(to, layer + 1);
+        queue.push({state: to, layer: layer + 1});
+      }
+    }
+  }
+
+  const layerCount = new Map();
+  for (const [state, layer] of layers) {
+    const idx = layerCount.get(layer) || 0;
+    const total = maxLayer.get(layer) || 1;
+    const x = 120 + layer * 160;
+    const y = 100 + (idx - (total-1)/2) * 130;
+    nodes.push({ id: state, x, y, isStart: state === start, isAccept: state === accept });
+    layerCount.set(layer, idx + 1);
+  }
+  return nodes;
+}
+
+function layoutDfa(dfa) {
+  const { states, transitions } = dfa;
+  const layers = new Map();
+  const queue = [{id: 0, layer: 0}];
+  layers.set(0, 0);
+  const maxLayer = new Map();
+
+  while (queue.length) {
+    const { id, layer } = queue.shift();
+    if (maxLayer.has(layer)) continue; 
+    maxLayer.set(layer, (maxLayer.get(layer) || 0) + 1);
+    const trans = transitions.get(id) || [];
+    for (const { to } of trans) {
+      if (!layers.has(to)) {
+        layers.set(to, layer + 1);
+        queue.push({id: to, layer: layer + 1});
+      }
+    }
+  }
+
+  const layerCount = new Map();
+  return states.map(s => {
+    const layer = layers.get(s.id) ?? 0;
+    const idx = layerCount.get(layer) || 0;
+    const total = maxLayer.get(layer) || 1;
+    const x = 120 + layer * 150;
+    const y = 100 + (idx - (total-1)/2) * 120;
+    layerCount.set(layer, idx + 1);
+    return { id: s.id, x, y, isStart: s.isStart, isAccept: s.isAccept };
+  });
+}
+
+function buildEdges(nfa) {
+  const edgeMap = new Map();
+  for (const [from, trans] of nfa.transitions) {
+    for (const { symbol, to } of trans) {
+      const key = `${from}-${to}-${symbol}`; 
+      if (!edgeMap.has(key)) edgeMap.set(key, { from, to, symbols: [] });
+      edgeMap.get(key).symbols.push(symbol);
+    }
+  }
+  return [...edgeMap.values()].map(e => ({ from: e.from, to: e.to, label: e.symbols.join(',') }));
+}
+
+function buildDfaEdges(dfa) {
+  const edgeMap = new Map();
+  for (const [from, trans] of dfa.transitions) {
+    for (const { symbol, to } of trans) {
+      const key = `${from}-${to}`;
+      if (!edgeMap.has(key)) edgeMap.set(key, { from, to, symbols: [] });
+      edgeMap.get(key).symbols.push(symbol);
+    }
+  }
+  return [...edgeMap.values()].map(e => ({ from: e.from, to: e.to, label: e.symbols.join(',') }));
+}
+
+const R = 30; 
+
+function worldToScreen(x, y) {
+  return [x * canvasScale + panX, y * canvasScale + panY];
+}
+
+function render() {
+  if (!canvas.width) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!nodePositions.length) return;
+
+  ctx.save();
+
+  for (const edge of edges) {
+    const fromNode = nodePositions.find(n => n.id === edge.from);
+    const toNode = nodePositions.find(n => n.id === edge.to);
+    if (!fromNode || !toNode) continue;
+
+    const isSelf = edge.from === edge.to;
+    const isHighlighted = simulatedPath && simulatedPath.some(p => p.from === edge.from && p.to === edge.to);
+
+    const [x1, y1] = worldToScreen(fromNode.x, fromNode.y);
+    const [x2, y2] = worldToScreen(toNode.x, toNode.y);
+
+    ctx.save();
+    if (isHighlighted) {
+      ctx.strokeStyle = '#3ddc97';
+      ctx.lineWidth = 2.5 * canvasScale;
+    } else {
+      const isEps = edge.label === EPSILON;
+      ctx.strokeStyle = isEps ? '#44495e' : '#6060a0';
+      ctx.lineWidth = 1.5 * canvasScale;
+      if (isEps) ctx.setLineDash([4 * canvasScale, 3 * canvasScale]);
+    }
+
+    if (isSelf) {
+      const loopR = R * canvasScale * 1.2;
+      ctx.beginPath();
+      ctx.arc(x1, y1 - R * canvasScale - loopR * 0.6, loopR, 0.4, Math.PI * 1.8);
+      ctx.stroke();
+      drawArrowHead(ctx, x1 - 8, y1 - R * canvasScale, -0.5, isHighlighted ? '#3ddc97' : '#6060a0');
+      drawEdgeLabel(ctx, x1, y1 - R * canvasScale - loopR * 1.8, edge.label, canvasScale);
+    } else {
+      const hasReverse = edges.some(e => e.from === edge.to && e.to === edge.from && e !== edge);
+      if (hasReverse) {
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const dx = x2 - x1, dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const cx = mx - dy / len * 40 * canvasScale;
+        const cy = my + dx / len * 40 * canvasScale;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.quadraticCurveTo(cx, cy, x2, y2);
+        ctx.stroke();
+        const tx = x2 - cx, ty = y2 - cy;
+        const tLen = Math.sqrt(tx*tx+ty*ty)||1;
+        drawArrowHead(ctx, x2 - (R*canvasScale)*tx/tLen, y2 - (R*canvasScale)*ty/tLen, Math.atan2(ty,tx), isHighlighted?'#3ddc97':'#6060a0');
+        drawEdgeLabel(ctx, cx, cy, edge.label, canvasScale);
+      } else {
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const sx = x1 + Math.cos(angle) * R * canvasScale;
+        const sy = y1 + Math.sin(angle) * R * canvasScale;
+        const ex = x2 - Math.cos(angle) * R * canvasScale;
+        const ey = y2 - Math.sin(angle) * R * canvasScale;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        drawArrowHead(ctx, ex, ey, angle, isHighlighted?'#3ddc97':'#6060a0');
+        const lx = (sx + ex) / 2 - Math.sin(angle) * 18 * canvasScale;
+        const ly = (sy + ey) / 2 + Math.cos(angle) * 18 * canvasScale;
+        drawEdgeLabel(ctx, lx, ly, edge.label, canvasScale);
+      }
+    }
+    ctx.restore();
+  }
+
+  for (const node of nodePositions) {
+    const [cx, cy] = worldToScreen(node.x, node.y);
+    const r = R * canvasScale;
+    const isInPath = simulatedPath && simulatedPath.some(p => p.state === node.id);
+
+    if (node.isStart) {
+      ctx.save();
+      ctx.strokeStyle = '#ffb347';
+      ctx.lineWidth = 2 * canvasScale;
+      ctx.beginPath();
+      ctx.moveTo(cx - r - 28 * canvasScale, cy);
+      ctx.lineTo(cx - r, cy);
+      ctx.stroke();
+      drawArrowHead(ctx, cx - r, cy, 0, '#ffb347');
+      ctx.restore();
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    if (isInPath) {
+      ctx.fillStyle = 'rgba(124,109,250,0.25)';
+    } else if (node.isAccept) {
+      ctx.fillStyle = 'rgba(61,220,151,0.1)';
+    } else if (node.isStart) {
+      ctx.fillStyle = 'rgba(255,179,71,0.08)';
+    } else {
+      ctx.fillStyle = '#1a1e2a';
+    }
+    ctx.fill();
+
+    ctx.lineWidth = (node.isStart ? 2 : 1.5) * canvasScale;
+    if (isInPath) ctx.strokeStyle = '#7c6dfa';
+    else if (node.isAccept) ctx.strokeStyle = '#3ddc97';
+    else if (node.isStart) ctx.strokeStyle = '#ffb347';
+    else ctx.strokeStyle = '#353c58';
+    ctx.stroke();
+
+    if (node.isAccept) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r - 5 * canvasScale, 0, Math.PI * 2);
+      ctx.strokeStyle = isInPath ? '#7c6dfa' : '#3ddc97';
+      ctx.lineWidth = 1 * canvasScale;
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = isInPath ? '#9d8ffb' : '#e8eaf0';
+    ctx.font = `${Math.max(11, 13 * canvasScale)}px 'JetBrains Mono', monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`q${node.id}`, cx, cy);
+  }
+
+  ctx.restore();
+}
+
+function drawArrowHead(ctx, x, y, angle, color) {
+  const size = 8 * canvasScale;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-size, -size * 0.45);
+  ctx.lineTo(-size, size * 0.45);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawEdgeLabel(ctx, x, y, label, scale) {
+  const fs = Math.max(10, 12 * scale);
+  ctx.font = `${fs}px 'JetBrains Mono', monospace`;
+  const w = ctx.measureText(label).width + 8;
+  ctx.fillStyle = '#13161e';
+  ctx.fillRect(x - w / 2, y - fs * 0.8, w, fs * 1.4);
+  const isEps = label === EPSILON || label.includes(EPSILON);
+  ctx.fillStyle = isEps ? '#555c7a' : '#9d8ffb';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, y + fs * 0.1);
+}
+
+function zoomFit() {
+  if (!nodePositions.length) return;
+  const xs = nodePositions.map(n => n.x), ys = nodePositions.map(n => n.y);
+  const minX = Math.min(...xs) - 150, maxX = Math.max(...xs) + 150;
+  const minY = Math.min(...ys) - 150, maxY = Math.max(...ys) + 150;
+  const w = maxX - minX, h = maxY - minY;
+  const scaleX = canvas.width / w, scaleY = canvas.height / h;
+  canvasScale = Math.min(scaleX, scaleY, 1.5);
+  panX = (canvas.width - w * canvasScale) / 2 - minX * canvasScale;
+  panY = (canvas.height - h * canvasScale) / 2 - minY * canvasScale;
+  render();
+}
+
+function resetView() {
+  canvasScale = 1; panX = 0; panY = 0;
+  render();
+}
+
+function buildTransitionTable(nfa, dfa) {
+  const table = document.getElementById('trans-table');
+  if (currentMode === 'dfa') {
+    const syms = dfa.alphabet;
+    let html = '<tr><th>State</th>' + syms.map(s=>`<th>${s}</th>`).join('') + '</tr>';
+    for (const state of dfa.states) {
+      const trans = dfa.transitions.get(state.id) || [];
+      let row = `<tr>`;
+      row += `<td class="${state.isStart?'start-state':''} ${state.isAccept?'accept-state':''}">`;
+      row += `${state.isStart?'→ ':''}q${state.id}${state.isAccept?'*':''}</td>`;
+      for (const sym of syms) {
+        const t = trans.find(t => t.symbol === sym);
+        row += `<td>${t ? 'q' + t.to : '∅'}</td>`;
+      }
+      row += '</tr>';
+      html += row;
+    }
+    table.innerHTML = html;
+  } else {
+    const syms = new Set();
+    for (const [, trans] of nfa.transitions) {
+      for (const {symbol} of trans) syms.add(symbol);
+    }
+    const symList = [...syms].sort((a,b) => a===EPSILON?1:b===EPSILON?-1:a.localeCompare(b));
+    
+    let html = '<tr><th>State</th>' + symList.map(s=>`<th>${s}</th>`).join('') + '</tr>';
+    for (let i = 0; i < nfa.stateCount; i++) {
+      const trans = nfa.transitions.get(i) || [];
+      if (trans.length === 0 && i !== nfa.start && i !== nfa.accept) continue; 
+      
+      const isStart = i === nfa.start, isAccept = i === nfa.accept;
+      let row = `<tr><td class="${isStart?'start-state':''} ${isAccept?'accept-state':''}">`;
+      row += `${isStart?'→ ':''}q${i}${isAccept?'*':''}</td>`;
+      for (const sym of symList) {
+        const tos = trans.filter(t=>t.symbol===sym).map(t=>'q'+t.to);
+        row += `<td>${tos.length?tos.join(', '):'∅'}</td>`;
+      }
+      row += '</tr>';
+      html += row;
+    }
+    table.innerHTML = html;
+  }
+}
+
+function updateStats(nfa, dfa) {
+  const grid = document.getElementById('stats-grid');
+  
+  if(currentMode === 'nfa') {
+      grid.innerHTML = `
+        <div class="stat-card"><div class="stat-label">NFA STATES</div><div class="stat-value accent">${nfa.stateCount}</div></div>
+        <div class="stat-card"><div class="stat-label">NFA TRANSITIONS</div><div class="stat-value">${[...nfa.transitions.values()].reduce((a,b)=>a+b.length,0)}</div></div>
+      `;
+  } else {
+      const alphabet = new Set();
+      for (const [,trans] of nfa.transitions) for (const {symbol} of trans) if (symbol !== EPSILON) alphabet.add(symbol);
+      grid.innerHTML = `
+        <div class="stat-card"><div class="stat-label">DFA STATES</div><div class="stat-value green">${dfa.stateCount}</div></div>
+        <div class="stat-card"><div class="stat-label">ALPHABET</div><div class="stat-value" style="font-size:16px">{${[...alphabet].join(',')}}</div></div>
+      `;
+  }
+}
+
+function simulate() {
+  const input = document.getElementById('sim-input').value;
+  const resultEl = document.getElementById('sim-result');
+
+  if (!currentDfa) { resultEl.style.display='none'; return; }
+  
+  if (currentMode !== 'dfa') setMode('dfa');
+
+  const { transitions, states } = currentDfa;
+  let current = 0; 
+  const path = [{ state: current, from: null, to: null }];
+
+  for (const ch of input) {
+    const trans = transitions.get(current) || [];
+    const t = trans.find(t => t.symbol === ch);
+    if (!t) {
+      resultEl.innerHTML = `<div class="sim-result sim-reject"><div class="sim-dot"></div>Rejected — no transition on '${ch}' from q${current}</div>`;
+      resultEl.style.display='flex';
+      simulatedPath = null; render();
+      return;
+    }
+    path.push({ state: t.to, from: current, to: t.to });
+    current = t.to;
+  }
+
+  const finalState = states.find(s => s.id === current);
+  const accepted = finalState && finalState.isAccept;
+
+  simulatedPath = path;
+  render();
+
+  if (accepted) {
+    resultEl.innerHTML = `<div class="sim-result sim-accept"><div class="sim-dot"></div>Accepted ✓  (${path.length-1} transitions)</div>`;
+  } else {
+    resultEl.innerHTML = `<div class="sim-result sim-reject"><div class="sim-dot"></div>Rejected — q${current} is not an accept state</div>`;
+  }
+  resultEl.style.display = 'flex';
+}
+
+function buildAutomaton() {
+  const re = document.getElementById('regex-input').value.trim();
+  const errEl = document.getElementById('error-msg');
+  errEl.textContent = '';
+
+  try {
+    validateRegex(re);
+    const postfix = toPostfix(re);
+    if (!postfix.length) throw new Error('Empty expression');
+
+    const result = topDownBuild(postfix);
+    buildSteps = result.steps;
+    currentNfa = result.finalNfa; 
+    currentDfa = nfaToDfa(currentNfa);
+    
+    simulatedPath = null;
+    currentStepIndex = 0; 
+
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('legend').style.display = 'flex';
+    document.getElementById('table-panel').style.display = 'flex';
+    document.getElementById('stats-panel').style.display = 'block';
+    document.getElementById('sim-result').style.display = 'none';
+
+    setMode('nfa'); 
+  } catch (e) {
+    errEl.textContent = '✗ ' + e.message;
+    document.getElementById('regex-input').classList.add('error');
+    setTimeout(() => document.getElementById('regex-input').classList.remove('error'), 1500);
+  }
+}
+
+function updateStepView() {
+  const step = buildSteps[currentStepIndex];
+  
+  document.getElementById('step-counter').textContent = `Step ${currentStepIndex + 1} / ${buildSteps.length}`;
+  document.getElementById('step-description').textContent = step.action;
+  
+  document.getElementById('btn-prev').disabled = (currentStepIndex === 0);
+  document.getElementById('btn-next').disabled = (currentStepIndex === buildSteps.length - 1);
+  
+  nodePositions = layoutNfa(step.nfa);
+  edges = buildEdges(step.nfa);
+  buildTransitionTable(step.nfa, currentDfa);
+  updateStats(step.nfa, currentDfa);
+  
+  resizeCanvas();
+  zoomFit();
+}
+
+function updateDfaView() {
+  nodePositions = layoutDfa(currentDfa);
+  edges = buildDfaEdges(currentDfa);
+  buildTransitionTable(currentNfa, currentDfa);
+  updateStats(currentNfa, currentDfa);
+  resizeCanvas();
+  zoomFit();
+}
+
+function stepPrev() {
+  if (currentStepIndex > 0) {
+    currentStepIndex--;
+    if (currentMode === 'nfa') updateStepView();
+  }
+}
+
+function stepNext() {
+  if (currentStepIndex < buildSteps.length - 1) {
+    currentStepIndex++;
+    if (currentMode === 'nfa') updateStepView();
+  }
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('tab-nfa').classList.toggle('active', mode === 'nfa');
+  document.getElementById('tab-dfa').classList.toggle('active', mode === 'dfa');
+  simulatedPath = null;
+  document.getElementById('sim-result').style.display = 'none';
+
+  const badge = document.getElementById('mode-badge');
+  const stepperBar = document.getElementById('stepper-bar');
+  
+  if (mode === 'dfa') {
+    stepperBar.style.display = 'none';
+    badge.textContent = 'Final DFA';
+    badge.className = 'mode-badge badge-dfa';
+    if (currentDfa) updateDfaView();
+  } else {
+    stepperBar.style.display = 'flex';
+    badge.textContent = 'ε-NFA (Steps)';
+    badge.className = 'mode-badge badge-nfa';
+    if (buildSteps.length) updateStepView();
+  }
+
+  setTimeout(() => {
+    resizeCanvas();
+    zoomFit();
+  }, 10);
+}
+
+function loadExample(re) {
+  document.getElementById('regex-input').value = re;
+  buildAutomaton();
+}
+
+document.getElementById('regex-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') buildAutomaton();
+});
+document.getElementById('sim-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') simulate();
+});
+
+// Init canvas
+resizeCanvas();
+
+</script>
+</body>
+</html>
